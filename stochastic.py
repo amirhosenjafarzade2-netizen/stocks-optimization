@@ -1,10 +1,38 @@
+```python
 import numpy as np
 from optimizer import calculate_metrics
-from sentiment import compute_sentiment
+from sentiment import black_scholes_greeks, compute_sentiment
 
-def simulate_scenarios(weights, expected_returns, return_stds, volatilities, vol_stds, correlations, sentiment_scores, sent_stds, inflation, tax_rates, risk_free_rate, current_rate, predicted_rate, use_sharpe, use_inflation, use_tax_rate, use_advanced_metrics, num_simulations, df=5):
+def simulate_scenarios(weights, expected_returns, return_stds, volatilities, vol_stds, correlations, sentiment_scores, sent_stds, inflation, tax_rates, risk_free_rate, current_rate, predicted_rate, asset_prices, times_to_maturity, strike_prices, implied_vols, option_types, use_sharpe, use_inflation, use_tax_rate, use_advanced_metrics, num_simulations, df=5):
     """
-    Simulate portfolio scenarios using t-distributions, including sentiment.
+    Simulate portfolio scenarios using t-distributions, including dynamic Greeks.
+    Parameters:
+        weights: Portfolio weights
+        expected_returns: Expected returns
+        return_stds: Standard deviations for returns
+        volatilities: Volatilities
+        vol_stds: Standard deviations for volatilities
+        correlations: Correlation matrix
+        sentiment_scores: Initial sentiment scores
+        sent_stds: Standard deviations for sentiment scores
+        inflation: Inflation rate
+        tax_rates: Tax rates per stock
+        risk_free_rate: Risk-free rate
+        current_rate: Current interest rate
+        predicted_rate: Predicted interest rate
+        asset_prices: Spot prices
+        times_to_maturity: Option expiries
+        strike_prices: Option strike prices
+        implied_vols: Implied volatilities
+        option_types: Option types ('call' or 'put')
+        use_sharpe: Include Sharpe Ratio
+        use_inflation: Include inflation
+        use_tax_rate: Include tax rates
+        use_advanced_metrics: Include VaR, Sortino
+        num_simulations: Number of simulations
+        df: t-distribution degrees of freedom
+    Returns:
+        Dictionary with metrics (mean, p5, p50, p95)
     """
     portfolio_returns = np.zeros(num_simulations)
     portfolio_vols = np.zeros(num_simulations)
@@ -27,12 +55,18 @@ def simulate_scenarios(weights, expected_returns, return_stds, volatilities, vol
         sim_sent_scores = sentiment_scores + sent_stds * t_samples[:, 2]
 
         sim_vols = np.maximum(sim_vols, 1e-6)
-
         sim_cov_matrix = np.diag(sim_vols) @ correlations @ np.diag(sim_vols)
 
-        # Recompute sentiment with sims (simplified)
-        sim_greeks = [{'Delta': 0, 'Gamma': 0, 'Theta': 0, 'Vega': 0, 'Rho': 0} for _ in range(num_stocks)]  # Placeholder, adapt if needed
-        sim_sent = np.array([compute_sentiment(g, current_rate, predicted_rate, inflation)[0] for g in sim_greeks]) + sim_sent_scores  # Adjust
+        # Simulate stock prices and update Greeks
+        sim_prices = np.array([p * np.exp(r - 0.5 * v**2 + v * np.random.normal()) for p, r, v in zip(asset_prices or [100]*num_stocks, sim_returns, sim_vols)])
+        sim_ttm = np.array([max(t - 1/252, 0.01) for t in times_to_maturity or [0.25]*num_stocks])
+        sim_greeks = [
+            black_scholes_greeks(
+                S=p, K=k, T=t, r=current_rate, sigma=iv, option_type=ot
+            ) if p is not None else {'Delta': 0, 'Gamma': 0, 'Theta': 0, 'Vega': 0, 'Rho': 0}
+            for p, k, t, iv, ot in zip(sim_prices, strike_prices or [100]*num_stocks, sim_ttm, implied_vols or [0.2]*num_stocks, option_types or ['call']*num_stocks)
+        ]
+        sim_sent = np.array([compute_sentiment(g, current_rate, predicted_rate, inflation)[0] for g in sim_greeks]) + sim_sent_scores
 
         metrics = calculate_metrics(
             weights=weights,
