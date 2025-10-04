@@ -7,10 +7,13 @@ import seaborn as sns
 import json
 from stochastic import simulate_scenarios
 from multiperiod import multiperiod_simulation
-from sentiment import black_scholes_greeks, compute_sentiment, cluster_stocks
+from sentiment import black_scholes_greeks, compute_sentiment, cluster_stocks, interpret_clusters
 
-# Set page config
 st.set_page_config(page_title="Options Greeks Sentiment Analyzer & Portfolio Optimizer", layout="wide")
+
+st.title("Options Greeks Sentiment Analyzer & Portfolio Optimizer")
+st.markdown("Analyze stock sentiment using options Greeks and optimize portfolio allocation for maximum profit.")
+st.warning("Educational purposes only. Not financial advice.")
 
 # Initialize session state
 if 'num_stocks' not in st.session_state:
@@ -18,37 +21,61 @@ if 'num_stocks' not in st.session_state:
 if 'stock_names' not in st.session_state:
     st.session_state.stock_names = ["Stock 1", "Stock 2"]
 
-# Title and description
-st.title("Options Greeks Sentiment Analyzer & Portfolio Optimizer")
-st.markdown("Analyze stock sentiment using options Greeks and optimize portfolio allocation.")
-st.warning("Educational purposes only. Not financial advice.")
-
-# Save/Load inputs
-col1, col2 = st.columns(2)
+# Save/Load/CSV inputs
+col1, col2, col3 = st.columns(3)
 with col1:
-    serializable_state = {k: v for k, v in st.session_state.items() if k.startswith(('num_stocks', 'stock_names', 'ret_', 'vol_', 'sent_', 'tax_', 'corr_', 'price_', 'strike_', 'ttm_', 'ivol_', 'opt_type_')) or k in ['current_rate', 'predicted_rate']}
+    serializable_state = {k: v for k, v in st.session_state.items() if k.startswith(('num_stocks', 'stock_names', 'ret_', 'vol_', 'tax_', 'corr_', 'price_', 'strike_', 'ttm_', 'ivol_', 'opt_type_', 'delta_', 'gamma_', 'theta_', 'vega_', 'rho_')) or k in ['current_rate', 'predicted_rate', 'inflation']}
     st.download_button("Save Inputs", data=json.dumps(serializable_state), file_name="sentiment_inputs.json")
 with col2:
-    uploaded_file = st.file_uploader("Load Inputs", type="json")
-    if uploaded_file:
+    uploaded_json = st.file_uploader("Load JSON Inputs", type="json")
+    if uploaded_json:
         try:
-            data = json.load(uploaded_file)
-            valid_keys = set(st.session_state.keys()) | set(['num_stocks', 'stock_names'] + [f'ret_{i}' for i in range(10)] + [f'vol_{i}' for i in range(10)] + [f'sent_{i}' for i in range(10)] + [f'tax_{i}' for i in range(10)] + [f'corr_{i}_{j}' for i in range(10) for j in range(i+1, 10)] + [f'price_{i}' for i in range(10)] + [f'strike_{i}' for i in range(10)] + [f'ttm_{i}' for i in range(10)] + [f'ivol_{i}' for i in range(10)] + [f'opt_type_{i}' for i in range(10)] + ['current_rate', 'predicted_rate'])
+            data = json.load(uploaded_json)
+            valid_keys = set(st.session_state.keys()) | set(['num_stocks', 'stock_names'] + [f'ret_{i}' for i in range(10)] + [f'vol_{i}' for i in range(10)] + [f'tax_{i}' for i in range(10)] + [f'corr_{i}_{j}' for i in range(10) for j in range(i+1, 10)] + [f'price_{i}' for i in range(10)] + [f'strike_{i}' for i in range(10)] + [f'ttm_{i}' for i in range(10)] + [f'ivol_{i}' for i in range(10)] + [f'opt_type_{i}' for i in range(10)] + [f'delta_{i}' for i in range(10)] + [f'gamma_{i}' for i in range(10)] + [f'theta_{i}' for i in range(10)] + [f'vega_{i}' for i in range(10)] + [f'rho_{i}' for i in range(10)] + ['current_rate', 'predicted_rate', 'inflation'])
             for k, v in data.items():
                 if k in valid_keys:
                     st.session_state[k] = v
             st.rerun()
         except Exception as e:
-            st.error(f"Error loading inputs: {str(e)}")
+            st.error(f"Error loading JSON: {str(e)}")
+with col3:
+    uploaded_csv = st.file_uploader("Load CSV Inputs", type="csv")
+    csv_data = None
+    if uploaded_csv:
+        try:
+            csv_data = pd.read_csv(uploaded_csv)
+            expected_cols = {'Ticker', 'Expected Return', 'Volatility', 'Tax Rate', 'Delta', 'Gamma', 'Theta', 'Vega', 'Rho', 'Spot Price', 'Strike Price', 'Time to Maturity', 'Implied Volatility', 'Option Type'}
+            if not all(col in csv_data.columns for col in ['Ticker', 'Expected Return', 'Volatility']):
+                st.error("CSV must at least contain: Ticker, Expected Return, Volatility. Optional: Tax Rate, Delta, Gamma, Theta, Vega, Rho, Spot Price, Strike Price, Time to Maturity, Implied Volatility, Option Type")
+                st.stop()
+            st.session_state.num_stocks = len(csv_data)
+            st.session_state.stock_names = csv_data['Ticker'].tolist()
+            for i, row in csv_data.iterrows():
+                st.session_state[f'ret_{i}'] = row['Expected Return']
+                st.session_state[f'vol_{i}'] = row['Volatility']
+                st.session_state[f'tax_{i}'] = row.get('Tax Rate', 0.20)
+                st.session_state[f'delta_{i}'] = row.get('Delta', 0.5)
+                st.session_state[f'gamma_{i}'] = row.get('Gamma', 0.02)
+                st.session_state[f'theta_{i}'] = row.get('Theta', -0.01)
+                st.session_state[f'vega_{i}'] = row.get('Vega', 0.1)
+                st.session_state[f'rho_{i}'] = row.get('Rho', 0.05)
+                st.session_state[f'price_{i}'] = row.get('Spot Price', 100.0)
+                st.session_state[f'strike_{i}'] = row.get('Strike Price', 100.0)
+                st.session_state[f'ttm_{i}'] = row.get('Time to Maturity', 0.25)
+                st.session_state[f'ivol_{i}'] = row.get('Implied Volatility', 0.2)
+                st.session_state[f'opt_type_{i}'] = row.get('Option Type', 'call')
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error loading CSV: {str(e)}")
+            st.stop()
 
-# Reset button
 if st.button("Reset All Inputs"):
     st.session_state.clear()
     st.session_state.num_stocks = 2
     st.session_state.stock_names = ["Stock 1", "Stock 2"]
     st.rerun()
 
-# Step 1: Stock Configuration
+# Stock Configuration
 with st.expander("Stock Configuration", expanded=True):
     num_stocks = st.number_input(
         "Enter number of stocks",
@@ -58,11 +85,9 @@ with st.expander("Stock Configuration", expanded=True):
         help="Select the number of stocks (1-10)."
     )
 
-    # Update stock_names
     if num_stocks != len(st.session_state.stock_names):
         st.session_state.stock_names = [f"Stock {i+1}" for i in range(num_stocks)]
 
-    # Stock names input
     st.subheader("Stock Names")
     cols = st.columns(2)
     stock_names = []
@@ -76,12 +101,13 @@ with st.expander("Stock Configuration", expanded=True):
             stock_names.append(name)
     st.session_state.stock_names = stock_names
 
-# Step 2: Optimization method
+# Optimization method
 with st.expander("Optimization Method", expanded=True):
     methods = ["Monte Carlo", "Genetic Algorithm", "Gradient Descent (Mean-Variance)", "SciPy (Constrained)"]
     method = st.selectbox(
         "Select optimization method",
-        methods
+        methods,
+        help="Choose method for portfolio optimization."
     )
 
 # Constraints
@@ -96,25 +122,25 @@ with st.expander("Constraints", expanded=False):
 # Metrics configuration
 with st.expander("Metrics Configuration", expanded=True):
     use_inflation = st.checkbox("Use Inflation", value=True)
-    inflation = st.number_input("Inflation rate", value=0.03) if use_inflation else 0.0
+    inflation = st.number_input("Inflation rate", min_value=0.0, max_value=0.2, value=0.03, key="inflation") if use_inflation else 0.0
 
     use_tax_rate = st.checkbox("Use Tax Rate", value=True)
 
     use_sharpe = st.checkbox("Include Sharpe Ratio", value=True)
-    risk_free_rate = st.number_input("Risk-free rate", value=0.02) if use_sharpe else 0.0
+    risk_free_rate = st.number_input("Risk-free rate", min_value=0.0, max_value=0.2, value=0.02) if use_sharpe else 0.0
 
     use_advanced_metrics = st.checkbox("Include Advanced Metrics (VaR, Sortino)", value=False)
 
     use_stochastic = st.checkbox("Stochastic Mode", value=False)
     if use_stochastic:
-        num_simulations = st.number_input("Number of simulations", value=1000)
-        std_factor = st.number_input("Uncertainty factor", value=0.2)
+        num_simulations = st.number_input("Number of simulations", min_value=100, max_value=10000, value=1000)
+        std_factor = st.number_input("Uncertainty factor", min_value=0.0, max_value=1.0, value=0.2)
 
     use_multiperiod = st.checkbox("Multi-Period Mode", value=False)
     if use_multiperiod:
-        horizon = st.number_input("Investment horizon (years)", value=0.25)  # Default 3 months
+        horizon = st.number_input("Investment horizon (years)", min_value=0.083, max_value=5.0, value=0.25, help="Default 0.25 = 3 months")
         rebalance_freq = st.selectbox("Rebalance frequency", ["Annual", "Quarterly", "Monthly"])
-        num_mp_sim = st.number_input("Number of multi-period simulations", value=1000)
+        num_mp_sim = st.number_input("Number of multi-period simulations", min_value=100, max_value=5000, value=1000)
 
 # Per stock metrics
 with st.expander("Per Stock Metrics", expanded=True):
@@ -132,38 +158,121 @@ with st.expander("Per Stock Metrics", expanded=True):
     for i, stock in enumerate(stock_names):
         with cols[i % 2]:
             st.markdown(f"**{stock}**")
-            exp_ret = st.number_input(f"Expected return", value=0.10, key=f"ret_{i}")
-            vol = st.number_input(f"Volatility", value=0.15, key=f"vol_{i}")
-            tax_rate = st.number_input(f"Tax rate", value=0.20, key=f"tax_{i}") if use_tax_rate else 0.0
+            exp_ret = st.number_input(
+                f"Expected return",
+                min_value=-1.0,
+                max_value=1.0,
+                value=st.session_state.get(f'ret_{i}', 0.10),
+                key=f"ret_{i}"
+            )
+            vol = st.number_input(
+                f"Volatility",
+                min_value=0.0,
+                max_value=1.0,
+                value=st.session_state.get(f'vol_{i}', 0.15),
+                key=f"vol_{i}"
+            )
+            tax_rate = st.number_input(
+                f"Tax rate",
+                min_value=0.0,
+                max_value=1.0,
+                value=st.session_state.get(f'tax_{i}', 0.20),
+                key=f"tax_{i}"
+            ) if use_tax_rate else 0.0
             auto_greeks = st.checkbox(f"Auto-compute Greeks for {stock}", value=False)
             if auto_greeks:
-                asset_price = st.number_input(f"Spot Price", value=100.0, key=f"price_{i}")
-                strike_price = st.number_input(f"Strike Price", value=100.0, key=f"strike_{i}")
-                time_to_maturity = st.number_input(f"Time to Maturity (years)", value=0.25, key=f"ttm_{i}")
-                implied_vol = st.number_input(f"Implied Volatility", value=0.2, key=f"ivol_{i}")
-                opt_type = st.selectbox(f"Option Type", ["call", "put"], key=f"opt_type_{i}")
+                asset_price = st.number_input(
+                    f"Spot Price",
+                    min_value=0.0,
+                    value=st.session_state.get(f'price_{i}', 100.0),
+                    key=f"price_{i}"
+                )
+                strike_price = st.number_input(
+                    f"Strike Price",
+                    min_value=0.0,
+                    value=st.session_state.get(f'strike_{i}', 100.0),
+                    key=f"strike_{i}"
+                )
+                time_to_maturity = st.number_input(
+                    f"Time to Maturity (years)",
+                    min_value=0.01,
+                    max_value=5.0,
+                    value=st.session_state.get(f'ttm_{i}', 0.25),
+                    key=f"ttm_{i}"
+                )
+                implied_vol = st.number_input(
+                    f"Implied Volatility",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=st.session_state.get(f'ivol_{i}', 0.2),
+                    key=f"ivol_{i}"
+                )
+                opt_type = st.selectbox(
+                    f"Option Type",
+                    ["call", "put"],
+                    index=0 if st.session_state.get(f'opt_type_{i}', 'call') == 'call' else 1,
+                    key=f"opt_type_{i}"
+                )
                 greeks = black_scholes_greeks(asset_price, strike_price, time_to_maturity, risk_free_rate, implied_vol, opt_type)
             else:
-                delta = st.number_input(f"Delta", value=0.5, key=f"delta_{i}")
-                gamma = st.number_input(f"Gamma", value=0.02, key=f"gamma_{i}")
-                theta = st.number_input(f"Theta", value=-0.01, key=f"theta_{i}")
-                vega = st.number_input(f"Vega", value=0.1, key=f"vega_{i}")
-                rho = st.number_input(f"Rho", value=0.05, key=f"rho_{i}")
+                delta = st.number_input(
+                    f"Delta",
+                    min_value=-1.0,
+                    max_value=1.0,
+                    value=st.session_state.get(f'delta_{i}', 0.5),
+                    key=f"delta_{i}"
+                )
+                gamma = st.number_input(
+                    f"Gamma",
+                    min_value=0.0,
+                    value=st.session_state.get(f'gamma_{i}', 0.02),
+                    key=f"gamma_{i}"
+                )
+                theta = st.number_input(
+                    f"Theta (daily)",
+                    value=st.session_state.get(f'theta_{i}', -0.01),
+                    key=f"theta_{i}"
+                )
+                vega = st.number_input(
+                    f"Vega (per 1%)",
+                    min_value=0.0,
+                    value=st.session_state.get(f'vega_{i}', 0.1),
+                    key=f"vega_{i}"
+                )
+                rho = st.number_input(
+                    f"Rho (per 1%)",
+                    value=st.session_state.get(f'rho_{i}', 0.05),
+                    key=f"rho_{i}"
+                )
                 greeks = {'Delta': delta, 'Gamma': gamma, 'Theta': theta, 'Vega': vega, 'Rho': rho}
+                asset_price = strike_price = time_to_maturity = implied_vol = None
+                opt_type = 'call'
             expected_returns.append(exp_ret)
             volatilities.append(vol)
             tax_rates.append(tax_rate)
-            asset_prices.append(asset_price if auto_greeks else None)
-            strike_prices.append(strike_price if auto_greeks else None)
-            times_to_maturity.append(time_to_maturity if auto_greeks else None)
-            implied_vols.append(implied_vol if auto_greeks else None)
-            option_types.append(opt_type if auto_greeks else "call")
+            asset_prices.append(asset_price)
+            strike_prices.append(strike_price)
+            times_to_maturity.append(time_to_maturity)
+            implied_vols.append(implied_vol)
+            option_types.append(opt_type)
             greeks_list.append(greeks)
 
 # Macro inputs
 with st.expander("Macro Inputs", expanded=True):
-    current_rate = st.number_input("Current Interest Rate", value=0.03, key="current_rate")
-    predicted_rate = st.number_input("Predicted Interest Rate", value=0.035, key="predicted_rate")
+    current_rate = st.number_input(
+        "Current Interest Rate",
+        min_value=0.0,
+        max_value=0.2,
+        value=st.session_state.get('current_rate', 0.03),
+        key="current_rate"
+    )
+    predicted_rate = st.number_input(
+        "Predicted Interest Rate",
+        min_value=0.0,
+        max_value=0.2,
+        value=st.session_state.get('predicted_rate', 0.035),
+        key="predicted_rate"
+    )
 
 # Correlation matrix
 with st.expander("Correlation Matrix", expanded=True):
@@ -179,7 +288,9 @@ with st.expander("Correlation Matrix", expanded=True):
                 with cols[(i+j) % 2]:
                     corr = st.number_input(
                         f"Correlation: {stock_names[i]} - {stock_names[j]}",
-                        value=0.0,
+                        min_value=-1.0,
+                        max_value=1.0,
+                        value=st.session_state.get(f'corr_{i}_{j}', 0.0),
                         key=f"corr_{i}_{j}"
                     )
                     corr_df.iloc[i, j] = corr
@@ -206,7 +317,7 @@ if scale == 0.01:
     predicted_rate *= scale
 
 # Iterations
-iterations = st.number_input("Number of iterations", value=1000)
+iterations = st.number_input("Number of iterations", min_value=100, max_value=5000, value=1000)
 
 # Cache plots
 @st.cache_data
@@ -220,17 +331,19 @@ def plot_pie(weights, stock_names):
 def plot_heatmap(correlations, stock_names):
     fig, ax = plt.subplots(figsize=(6, 4))
     sns.heatmap(correlations, annot=True, cmap='coolwarm', ax=ax, xticklabels=stock_names, yticklabels=stock_names, vmin=-1, vmax=1, center=0)
+    ax.set_title("Correlation Matrix")
     return fig
 
 @st.cache_data
 def plot_efficient_frontier(portfolio_returns, portfolio_vols, opt_return, opt_vol):
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.scatter(portfolio_vols, portfolio_returns, c='blue', alpha=0.3, s=10)
-    ax.scatter(opt_vol, opt_return, c='red', marker='*', s=300)
+    ax.scatter(opt_vol, opt_return, c='red', marker='*', s=300, label='Optimal Portfolio')
     ax.set_xlabel("Volatility")
     ax.set_ylabel("Expected Return")
     ax.set_title("Efficient Frontier")
     ax.grid(True)
+    ax.legend()
     return fig
 
 @st.cache_data
@@ -238,6 +351,8 @@ def plot_histogram(data, title):
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.hist(data, bins=30, color='blue', alpha=0.7)
     ax.set_title(title)
+    ax.set_xlabel("Value")
+    ax.set_ylabel("Frequency")
     return fig
 
 @st.cache_data
@@ -245,6 +360,8 @@ def plot_sentiment_bar(scores, stock_names):
     fig, ax = plt.subplots(figsize=(6, 4))
     sns.barplot(x=stock_names, y=scores, ax=ax)
     ax.set_title("Sentiment Scores")
+    ax.set_xlabel("Stock")
+    ax.set_ylabel("Sentiment Score")
     return fig
 
 # Optimize button
@@ -252,6 +369,14 @@ if st.button("Analyze Sentiment & Optimize Portfolio"):
     progress_bar = st.progress(0)
     with st.spinner("Processing..."):
         try:
+            # Validate inputs
+            if np.any(np.array(volatilities) <= 0):
+                st.error("Volatilities must be positive.")
+                st.stop()
+            if len(set(stock_names)) != len(stock_names):
+                st.error("Stock names must be unique.")
+                st.stop()
+
             # Compute sentiment
             sentiment_scores = []
             sentiments = []
@@ -264,11 +389,11 @@ if st.button("Analyze Sentiment & Optimize Portfolio"):
             # Optimize sentiment weights with GA
             features = np.array([[g['Delta'], g['Gamma'], g['Theta'], g['Vega'], g['Rho']] for g in greeks_list])
             opt_sent_weights = genetic_optimize_sentiment_weights(features, np.array(sentiment_scores))
-            # Recompute scores with opt weights
+            # Recompute scores with optimized weights
             sentiment_scores = [compute_sentiment(g, current_rate, predicted_rate, inflation, opt_sent_weights)[0] for g in greeks_list]
             progress_bar.progress(0.5)
 
-            # Portfolio opt, using sentiment as dividend analog
+            # Portfolio optimization
             weights, metrics = optimize_portfolio(
                 method=method,
                 expected_returns=np.array(expected_returns),
@@ -287,32 +412,67 @@ if st.button("Analyze Sentiment & Optimize Portfolio"):
                 max_weight=max_weight
             )
 
-            # Stochastic
+            # Stochastic simulation
             if use_stochastic:
                 return_stds = np.array(expected_returns) * std_factor
                 vol_stds = np.array(volatilities) * std_factor
                 sent_stds = np.array(sentiment_scores) * std_factor
                 stochastic_metrics = simulate_scenarios(
-                    weights, np.array(expected_returns), return_stds, np.array(volatilities), vol_stds, correlations,
-                    np.array(sentiment_scores), sent_stds, inflation, np.array(tax_rates), risk_free_rate, current_rate, predicted_rate,
-                    use_sharpe, use_inflation, use_tax_rate, use_advanced_metrics, num_simulations
+                    weights=weights,
+                    expected_returns=np.array(expected_returns),
+                    return_stds=return_stds,
+                    volatilities=np.array(volatilities),
+                    vol_stds=vol_stds,
+                    correlations=correlations,
+                    sentiment_scores=np.array(sentiment_scores),
+                    sent_stds=sent_stds,
+                    inflation=inflation,
+                    tax_rates=np.array(tax_rates),
+                    risk_free_rate=risk_free_rate,
+                    current_rate=current_rate,
+                    predicted_rate=predicted_rate,
+                    asset_prices=asset_prices,
+                    times_to_maturity=times_to_maturity,
+                    strike_prices=strike_prices,
+                    implied_vols=implied_vols,
+                    option_types=option_types,
+                    use_sharpe=use_sharpe,
+                    use_inflation=use_inflation,
+                    use_tax_rate=use_tax_rate,
+                    use_advanced_metrics=use_advanced_metrics,
+                    num_simulations=num_simulations
                 )
                 metrics.update(stochastic_metrics)
+            progress_bar.progress(0.75)
 
-            # Multi-period
+            # Multi-period simulation
             if use_multiperiod:
                 mp_metrics = multiperiod_simulation(
-                    weights, np.array(expected_returns), np.array(volatilities), correlations,
-                    horizon, rebalance_freq, num_mp_sim
+                    weights=weights,
+                    expected_returns=np.array(expected_returns),
+                    volatilities=np.array(volatilities),
+                    correlations=correlations,
+                    horizon=horizon,
+                    rebalance_freq=rebalance_freq,
+                    num_simulations=num_mp_sim
                 )
                 metrics.update(mp_metrics)
-
             progress_bar.progress(1.0)
+
         except Exception as e:
-            st.error(f"Error: {str(e)}")
+            st.error(f"Error during optimization: {str(e)}")
             st.stop()
 
-    st.success("Complete!")
+    st.success("Optimization and Analysis Complete!")
+
+    # Display sentiment weights
+    with st.expander("Sentiment Weights", expanded=True):
+        weights_df = pd.DataFrame({
+            'Greek': ['Delta', 'Gamma', 'Theta', 'Vega', 'Rho'],
+            'Weight': opt_sent_weights
+        })
+        st.table(weights_df)
+        st.markdown("These weights are optimized to maximize separation between bullish and bearish stocks.")
 
     # Display allocation
     with st.expander("Optimized Portfolio Allocation", expanded=True):
@@ -328,13 +488,15 @@ if st.button("Analyze Sentiment & Optimize Portfolio"):
         fig_sent = plot_sentiment_bar(sentiment_scores, stock_names)
         st.pyplot(fig_sent)
 
-    # Cluster
+    # Cluster results
     with st.expander("Stock Clusters", expanded=False):
-        clusters, _ = cluster_stocks(features)
-        sent_df['Cluster'] = clusters
+        clusters, centers = cluster_stocks(features)
+        cluster_labels = interpret_clusters(centers)
+        sent_df['Cluster'] = [cluster_labels[c] for c in clusters]
         st.table(sent_df)
+        st.markdown("Clusters group stocks by similar Greeks profiles (e.g., bullish high Delta, high volatility sensitivity).")
 
-    # Metrics
+    # Portfolio metrics
     with st.expander("Portfolio Metrics", expanded=True):
         normalized_metrics = {}
         for k, v in metrics.items():
