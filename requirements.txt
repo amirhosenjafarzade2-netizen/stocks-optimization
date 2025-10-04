@@ -4,5 +4,5 @@ pandas>=2.2.2
 matplotlib>=3.8.4
 seaborn>=0.13.2
 scipy>=1.13.1
-scikit-learn>=1.5.2  # For clustering
-pygad>=3.3.3  # For GA (simple install, but note: no pip in tools, assume available or use scipy alternative)
+scikit-learn>=1.5.2
+pygad>=3.3.3
