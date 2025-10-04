@@ -1,3 +1,10 @@
+# Ensure the following files are in the same directory (/mount/src/stocks-optimization/):
+# - sentiment.py (containing black_scholes_greeks, compute_sentiment, cluster_stocks, interpret_clusters)
+# - optimizer.py (containing optimize_portfolio, genetic_optimize_sentiment_weights)
+# - stochastic.py (containing simulate_scenarios)
+# - multiperiod.py (containing multiperiod_simulation)
+# - requirements.txt (listing streamlit, pandas, numpy, matplotlib, seaborn, scipy, scikit-learn, pygad)
+
 import streamlit as st
 from optimizer import optimize_portfolio, genetic_optimize_sentiment_weights
 import pandas as pd
@@ -45,8 +52,8 @@ with col3:
         try:
             csv_data = pd.read_csv(uploaded_csv)
             expected_cols = {'Ticker', 'Expected Return', 'Volatility', 'Tax Rate', 'Delta', 'Gamma', 'Theta', 'Vega', 'Rho', 'Spot Price', 'Strike Price', 'Time to Maturity', 'Implied Volatility', 'Option Type'}
-            if not all(col in csv_data.columns for col in ['Ticker', 'Expected Return', 'Volatility']):
-                st.error("CSV must at least contain: Ticker, Expected Return, Volatility. Optional: Tax Rate, Delta, Gamma, Theta, Vega, Rho, Spot Price, Strike Price, Time to Maturity, Implied Volatility, Option Type")
+            if not all(col in csv_data.columns for col in ['Ticker', 'Expected Return']):
+                st.error("CSV must at least contain: Ticker, Expected Return. Optional: Volatility, Tax Rate, Delta, Gamma, Theta, Vega, Rho, Spot Price, Strike Price, Time to Maturity, Implied Volatility, Option Type")
                 st.stop()
             if len(csv_data) > 10:
                 st.error("CSV cannot contain more than 10 stocks.")
@@ -55,7 +62,7 @@ with col3:
             st.session_state.stock_names = csv_data['Ticker'].tolist()
             for i, row in csv_data.iterrows():
                 st.session_state[f'ret_{i}'] = row['Expected Return']
-                st.session_state[f'vol_{i}'] = row['Volatility']
+                st.session_state[f'vol_{i}'] = row.get('Volatility', 0.15)
                 st.session_state[f'tax_{i}'] = row.get('Tax Rate', 0.20)
                 st.session_state[f'delta_{i}'] = row.get('Delta', 0.5)
                 st.session_state[f'gamma_{i}'] = row.get('Gamma', 0.02)
@@ -224,24 +231,14 @@ with st.expander("Per Stock Metrics", expanded=True):
                 key=f"ret_{i}",
                 help="Annualized expected return."
             )
-            vol = st.number_input(
-                f"Volatility",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.get(f'vol_{i}', 0.15),
-                key=f"vol_{i}",
-                help="Annualized volatility."
-            )
-            tax_rate = st.number_input(
-                f"Tax rate",
-                min_value=0.0,
-                max_value=1.0,
-                value=st.session_state.get(f'tax_{i}', 0.20),
-                key=f"tax_{i}",
-                help="Tax rate for returns."
-            ) if use_tax_rate else 0.0
             auto_greeks = st.checkbox(f"Auto-compute Greeks for {stock}", value=False)
             if auto_greeks:
+                use_implied_vol = st.checkbox(
+                    f"Use Implied Volatility as Stock Volatility for {stock}",
+                    value=True,
+                    key=f"use_ivol_{i}",
+                    help="Use option's implied volatility as stock volatility for optimization."
+                )
                 asset_price = st.number_input(
                     f"Spot Price",
                     min_value=0.0,
@@ -280,7 +277,23 @@ with st.expander("Per Stock Metrics", expanded=True):
                     help="Call or put option."
                 )
                 greeks = black_scholes_greeks(asset_price, strike_price, time_to_maturity, risk_free_rate, implied_vol, opt_type)
+                vol = implied_vol if use_implied_vol else st.number_input(
+                    f"Volatility",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=st.session_state.get(f'vol_{i}', 0.15),
+                    key=f"vol_{i}",
+                    help="Annualized stock volatility."
+                )
             else:
+                vol = st.number_input(
+                    f"Volatility",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=st.session_state.get(f'vol_{i}', 0.15),
+                    key=f"vol_{i}",
+                    help="Annualized stock volatility."
+                )
                 delta = st.number_input(
                     f"Delta",
                     min_value=-1.0,
@@ -318,6 +331,14 @@ with st.expander("Per Stock Metrics", expanded=True):
                 greeks = {'Delta': delta, 'Gamma': gamma, 'Theta': theta, 'Vega': vega, 'Rho': rho}
                 asset_price = strike_price = time_to_maturity = implied_vol = None
                 opt_type = 'call'
+            tax_rate = st.number_input(
+                f"Tax rate",
+                min_value=0.0,
+                max_value=1.0,
+                value=st.session_state.get(f'tax_{i}', 0.20),
+                key=f"tax_{i}",
+                help="Tax rate for returns."
+            ) if use_tax_rate else 0.0
             expected_returns.append(exp_ret)
             volatilities.append(vol)
             tax_rates.append(tax_rate)
