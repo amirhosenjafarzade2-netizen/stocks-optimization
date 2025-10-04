@@ -48,6 +48,9 @@ with col3:
             if not all(col in csv_data.columns for col in ['Ticker', 'Expected Return', 'Volatility']):
                 st.error("CSV must at least contain: Ticker, Expected Return, Volatility. Optional: Tax Rate, Delta, Gamma, Theta, Vega, Rho, Spot Price, Strike Price, Time to Maturity, Implied Volatility, Option Type")
                 st.stop()
+            if len(csv_data) > 10:
+                st.error("CSV cannot contain more than 10 stocks.")
+                st.stop()
             st.session_state.num_stocks = len(csv_data)
             st.session_state.stock_names = csv_data['Ticker'].tolist()
             for i, row in csv_data.iterrows():
@@ -114,33 +117,88 @@ with st.expander("Optimization Method", expanded=True):
 with st.expander("Constraints", expanded=False):
     use_constraints = st.checkbox("Use weight constraints", value=False)
     if use_constraints:
-        min_weight = st.number_input("Minimum weight per stock", min_value=0.0, max_value=0.5, value=0.0)
-        max_weight = st.number_input("Maximum weight per stock", min_value=0.0, max_value=1.0, value=1.0)
+        min_weight = st.number_input(
+            "Minimum weight per stock",
+            min_value=0.0,
+            max_value=0.5,
+            value=0.0,
+            help="Minimum allocation per stock (0 to 0.5)."
+        )
+        max_weight = st.number_input(
+            "Maximum weight per stock",
+            min_value=0.0,
+            max_value=1.0,
+            value=1.0,
+            help="Maximum allocation per stock (0 to 1)."
+        )
+        if min_weight > max_weight:
+            st.error("Minimum weight cannot exceed maximum weight.")
+            st.stop()
     else:
         min_weight = max_weight = None
 
 # Metrics configuration
 with st.expander("Metrics Configuration", expanded=True):
     use_inflation = st.checkbox("Use Inflation", value=True)
-    inflation = st.number_input("Inflation rate", min_value=0.0, max_value=0.2, value=0.03, key="inflation") if use_inflation else 0.0
+    inflation = st.number_input(
+        "Inflation rate",
+        min_value=0.0,
+        max_value=0.2,
+        value=st.session_state.get('inflation', 0.03),
+        key="inflation",
+        help="Annual inflation rate."
+    ) if use_inflation else 0.0
 
     use_tax_rate = st.checkbox("Use Tax Rate", value=True)
 
     use_sharpe = st.checkbox("Include Sharpe Ratio", value=True)
-    risk_free_rate = st.number_input("Risk-free rate", min_value=0.0, max_value=0.2, value=0.02) if use_sharpe else 0.0
+    risk_free_rate = st.number_input(
+        "Risk-free rate",
+        min_value=0.0,
+        max_value=0.2,
+        value=0.02,
+        help="Annual risk-free rate."
+    ) if use_sharpe else 0.0
 
     use_advanced_metrics = st.checkbox("Include Advanced Metrics (VaR, Sortino)", value=False)
 
     use_stochastic = st.checkbox("Stochastic Mode", value=False)
     if use_stochastic:
-        num_simulations = st.number_input("Number of simulations", min_value=100, max_value=10000, value=1000)
-        std_factor = st.number_input("Uncertainty factor", min_value=0.0, max_value=1.0, value=0.2)
+        num_simulations = st.number_input(
+            "Number of simulations",
+            min_value=100,
+            max_value=10000,
+            value=1000,
+            help="Number of Monte Carlo scenarios."
+        )
+        std_factor = st.number_input(
+            "Uncertainty factor",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.2,
+            help="Multiplies standard deviations for simulations."
+        )
 
     use_multiperiod = st.checkbox("Multi-Period Mode", value=False)
     if use_multiperiod:
-        horizon = st.number_input("Investment horizon (years)", min_value=0.083, max_value=5.0, value=0.25, help="Default 0.25 = 3 months")
-        rebalance_freq = st.selectbox("Rebalance frequency", ["Annual", "Quarterly", "Monthly"])
-        num_mp_sim = st.number_input("Number of multi-period simulations", min_value=100, max_value=5000, value=1000)
+        horizon = st.number_input(
+            "Investment horizon (years)",
+            min_value=0.083,
+            max_value=5.0,
+            value=0.25,
+            help="Default 0.25 = 3 months."
+        )
+        rebalance_freq = st.selectbox(
+            "Rebalance frequency",
+            ["Annual", "Quarterly", "Monthly"],
+            help="How often to rebalance the portfolio."
+        )
+        num_mp_sim = st.number_input(
+            "Number of multi-period simulations",
+            min_value=100,
+            max_value=5000,
+            value=1000
+        )
 
 # Per stock metrics
 with st.expander("Per Stock Metrics", expanded=True):
@@ -163,21 +221,24 @@ with st.expander("Per Stock Metrics", expanded=True):
                 min_value=-1.0,
                 max_value=1.0,
                 value=st.session_state.get(f'ret_{i}', 0.10),
-                key=f"ret_{i}"
+                key=f"ret_{i}",
+                help="Annualized expected return."
             )
             vol = st.number_input(
                 f"Volatility",
                 min_value=0.0,
                 max_value=1.0,
                 value=st.session_state.get(f'vol_{i}', 0.15),
-                key=f"vol_{i}"
+                key=f"vol_{i}",
+                help="Annualized volatility."
             )
             tax_rate = st.number_input(
                 f"Tax rate",
                 min_value=0.0,
                 max_value=1.0,
                 value=st.session_state.get(f'tax_{i}', 0.20),
-                key=f"tax_{i}"
+                key=f"tax_{i}",
+                help="Tax rate for returns."
             ) if use_tax_rate else 0.0
             auto_greeks = st.checkbox(f"Auto-compute Greeks for {stock}", value=False)
             if auto_greeks:
@@ -185,33 +246,38 @@ with st.expander("Per Stock Metrics", expanded=True):
                     f"Spot Price",
                     min_value=0.0,
                     value=st.session_state.get(f'price_{i}', 100.0),
-                    key=f"price_{i}"
+                    key=f"price_{i}",
+                    help="Current stock price."
                 )
                 strike_price = st.number_input(
                     f"Strike Price",
                     min_value=0.0,
                     value=st.session_state.get(f'strike_{i}', 100.0),
-                    key=f"strike_{i}"
+                    key=f"strike_{i}",
+                    help="Option strike price."
                 )
                 time_to_maturity = st.number_input(
                     f"Time to Maturity (years)",
                     min_value=0.01,
                     max_value=5.0,
                     value=st.session_state.get(f'ttm_{i}', 0.25),
-                    key=f"ttm_{i}"
+                    key=f"ttm_{i}",
+                    help="Time until option expiry."
                 )
                 implied_vol = st.number_input(
                     f"Implied Volatility",
                     min_value=0.0,
                     max_value=1.0,
                     value=st.session_state.get(f'ivol_{i}', 0.2),
-                    key=f"ivol_{i}"
+                    key=f"ivol_{i}",
+                    help="Option implied volatility."
                 )
                 opt_type = st.selectbox(
                     f"Option Type",
                     ["call", "put"],
                     index=0 if st.session_state.get(f'opt_type_{i}', 'call') == 'call' else 1,
-                    key=f"opt_type_{i}"
+                    key=f"opt_type_{i}",
+                    help="Call or put option."
                 )
                 greeks = black_scholes_greeks(asset_price, strike_price, time_to_maturity, risk_free_rate, implied_vol, opt_type)
             else:
@@ -220,29 +286,34 @@ with st.expander("Per Stock Metrics", expanded=True):
                     min_value=-1.0,
                     max_value=1.0,
                     value=st.session_state.get(f'delta_{i}', 0.5),
-                    key=f"delta_{i}"
+                    key=f"delta_{i}",
+                    help="Option Delta."
                 )
                 gamma = st.number_input(
                     f"Gamma",
                     min_value=0.0,
                     value=st.session_state.get(f'gamma_{i}', 0.02),
-                    key=f"gamma_{i}"
+                    key=f"gamma_{i}",
+                    help="Option Gamma."
                 )
                 theta = st.number_input(
                     f"Theta (daily)",
                     value=st.session_state.get(f'theta_{i}', -0.01),
-                    key=f"theta_{i}"
+                    key=f"theta_{i}",
+                    help="Daily Theta decay."
                 )
                 vega = st.number_input(
                     f"Vega (per 1%)",
                     min_value=0.0,
                     value=st.session_state.get(f'vega_{i}', 0.1),
-                    key=f"vega_{i}"
+                    key=f"vega_{i}",
+                    help="Vega per 1% volatility change."
                 )
                 rho = st.number_input(
                     f"Rho (per 1%)",
                     value=st.session_state.get(f'rho_{i}', 0.05),
-                    key=f"rho_{i}"
+                    key=f"rho_{i}",
+                    help="Rho per 1% rate change."
                 )
                 greeks = {'Delta': delta, 'Gamma': gamma, 'Theta': theta, 'Vega': vega, 'Rho': rho}
                 asset_price = strike_price = time_to_maturity = implied_vol = None
@@ -264,14 +335,16 @@ with st.expander("Macro Inputs", expanded=True):
         min_value=0.0,
         max_value=0.2,
         value=st.session_state.get('current_rate', 0.03),
-        key="current_rate"
+        key="current_rate",
+        help="Current annual risk-free rate."
     )
     predicted_rate = st.number_input(
         "Predicted Interest Rate",
         min_value=0.0,
         max_value=0.2,
         value=st.session_state.get('predicted_rate', 0.035),
-        key="predicted_rate"
+        key="predicted_rate",
+        help="Predicted annual risk-free rate."
     )
 
 # Correlation matrix
@@ -291,7 +364,8 @@ with st.expander("Correlation Matrix", expanded=True):
                         min_value=-1.0,
                         max_value=1.0,
                         value=st.session_state.get(f'corr_{i}_{j}', 0.0),
-                        key=f"corr_{i}_{j}"
+                        key=f"corr_{i}_{j}",
+                        help="Correlation between stocks."
                     )
                     corr_df.iloc[i, j] = corr
                     corr_df.iloc[j, i] = corr
@@ -301,7 +375,8 @@ with st.expander("Correlation Matrix", expanded=True):
 with st.expander("Input Format", expanded=True):
     input_format = st.radio(
         "Input numbers as:",
-        ("Decimal (e.g., 0.05)", "Percentage (e.g., 5)")
+        ("Decimal (e.g., 0.05)", "Percentage (e.g., 5)"),
+        help="Choose how to input returns, volatilities, etc."
     )
     scale = 0.01 if input_format == "Percentage (e.g., 5)" else 1.0
 
@@ -317,7 +392,13 @@ if scale == 0.01:
     predicted_rate *= scale
 
 # Iterations
-iterations = st.number_input("Number of iterations", min_value=100, max_value=5000, value=1000)
+iterations = st.number_input(
+    "Number of iterations",
+    min_value=100,
+    max_value=5000,
+    value=1000,
+    help="Number of iterations for optimization."
+)
 
 # Cache plots
 @st.cache_data
@@ -375,6 +456,9 @@ if st.button("Analyze Sentiment & Optimize Portfolio"):
                 st.stop()
             if len(set(stock_names)) != len(stock_names):
                 st.error("Stock names must be unique.")
+                st.stop()
+            if np.any(np.isnan(correlations)) or not np.allclose(correlations, correlations.T):
+                st.error("Correlation matrix must be symmetric and valid.")
                 st.stop()
 
             # Compute sentiment
