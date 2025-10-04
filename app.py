@@ -51,9 +51,9 @@ with col3:
     if uploaded_csv:
         try:
             csv_data = pd.read_csv(uploaded_csv)
-            expected_cols = {'Ticker', 'Expected Return', 'Volatility', 'Tax Rate', 'Delta', 'Gamma', 'Theta', 'Vega', 'Rho', 'Spot Price', 'Strike Price', 'Time to Maturity', 'Implied Volatility', 'Option Type'}
+            expected_cols = {'Ticker', 'Expected Return', 'Volatility', 'Tax Rate', 'Delta', 'Gamma', 'Theta', 'Vega', 'Rho', 'Spot Price', 'Strike Price', 'Time to Maturity', 'Implied Volatility', 'Option Type', 'Use Implied Volatility'}
             if not all(col in csv_data.columns for col in ['Ticker', 'Expected Return']):
-                st.error("CSV must at least contain: Ticker, Expected Return. Optional: Volatility, Tax Rate, Delta, Gamma, Theta, Vega, Rho, Spot Price, Strike Price, Time to Maturity, Implied Volatility, Option Type")
+                st.error("CSV must at least contain: Ticker, Expected Return. Optional: Volatility, Tax Rate, Delta, Gamma, Theta, Vega, Rho, Spot Price, Strike Price, Time to Maturity, Implied Volatility, Option Type, Use Implied Volatility")
                 st.stop()
             if len(csv_data) > 10:
                 st.error("CSV cannot contain more than 10 stocks.")
@@ -232,7 +232,7 @@ with st.expander("Per Stock Metrics", expanded=True):
                 key=f"ret_{i}",
                 help="Annualized expected return."
             )
-            auto_greeks = st.checkbox(f"Auto-compute Greeks for {stock}", value=False)
+            auto_greeks = st.checkbox(f"Auto-compute Greeks for {stock}", value=False, key=f"auto_greeks_{i}")
             if auto_greeks:
                 use_implied_vol = st.checkbox(
                     f"Use Implied Volatility as Stock Volatility for {stock}",
@@ -473,14 +473,29 @@ if st.button("Analyze Sentiment & Optimize Portfolio"):
     with st.spinner("Processing..."):
         try:
             # Validate inputs
+            if not stock_names:
+                st.error("No stocks specified. Please enter at least one stock name.")
+                st.stop()
+            if len(expected_returns) == 0:
+                st.error("No expected returns provided. Please input expected returns for all stocks.")
+                st.stop()
+            if len(volatilities) == 0:
+                st.error("No volatilities provided. Please input volatilities or enable 'Use Implied Volatility' for all stocks.")
+                st.stop()
             if np.any(np.array(volatilities) <= 0):
                 st.error("Volatilities must be positive.")
                 st.stop()
             if len(set(stock_names)) != len(stock_names):
                 st.error("Stock names must be unique.")
                 st.stop()
+            if correlations.shape[0] != len(stock_names):
+                st.error("Correlation matrix size does not match number of stocks.")
+                st.stop()
             if np.any(np.isnan(correlations)) or not np.allclose(correlations, correlations.T):
                 st.error("Correlation matrix must be symmetric and valid.")
+                st.stop()
+            if len(greeks_list) == 0:
+                st.error("No Greeks provided. Please input Greeks or enable 'Auto-compute Greeks' for all stocks.")
                 st.stop()
 
             # Compute sentiment
@@ -494,6 +509,9 @@ if st.button("Analyze Sentiment & Optimize Portfolio"):
 
             # Optimize sentiment weights with GA
             features = np.array([[g['Delta'], g['Gamma'], g['Theta'], g['Vega'], g['Rho']] for g in greeks_list])
+            if features.size == 0:
+                st.error("No valid Greeks features for clustering. Please ensure Greeks are computed correctly.")
+                st.stop()
             opt_sent_weights = genetic_optimize_sentiment_weights(features, np.array(sentiment_scores))
             # Recompute scores with optimized weights
             sentiment_scores = [compute_sentiment(g, current_rate, predicted_rate, inflation, opt_sent_weights)[0] for g in greeks_list]
