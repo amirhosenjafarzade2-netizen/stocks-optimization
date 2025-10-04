@@ -34,6 +34,7 @@ def simulate_scenarios(weights, expected_returns, return_stds, volatilities, vol
     Returns:
         Dictionary with metrics (mean, p5, p50, p95)
     """
+    # Initialize arrays
     portfolio_returns = np.zeros(num_simulations)
     portfolio_vols = np.zeros(num_simulations)
     portfolio_sentiments = np.zeros(num_simulations)
@@ -48,7 +49,15 @@ def simulate_scenarios(weights, expected_returns, return_stds, volatilities, vol
     L = np.linalg.cholesky(cov_matrix)
     scale = np.sqrt((df - 2) / df)
 
+    # Ensure default values for option parameters if None
+    asset_prices = asset_prices or [100.0] * num_stocks
+    times_to_maturity = times_to_maturity or [0.25] * num_stocks
+    strike_prices = strike_prices or [100.0] * num_stocks
+    implied_vols = implied_vols or [0.2] * num_stocks
+    option_types = option_types or ['call'] * num_stocks
+
     for i in range(num_simulations):
+        # Simulate returns, volatilities, and sentiment scores
         t_samples = np.random.standard_t(df, size=(num_stocks, 3)) * scale
         sim_returns = expected_returns + return_stds * t_samples[:, 0]
         sim_vols = volatilities + (L @ t_samples[:, 1])
@@ -58,16 +67,23 @@ def simulate_scenarios(weights, expected_returns, return_stds, volatilities, vol
         sim_cov_matrix = np.diag(sim_vols) @ correlations @ np.diag(sim_vols)
 
         # Simulate stock prices and update Greeks
-        sim_prices = np.array([p * np.exp(r - 0.5 * v**2 + v * np.random.normal()) for p, r, v in zip(asset_prices or [100]*num_stocks, sim_returns, sim_vols)])
-        sim_ttm = np.array([max(t - 1/252, 0.01) for t in times_to_maturity or [0.25]*num_stocks])
+        sim_prices = np.array([
+            p * np.exp(r - 0.5 * v**2 + v * np.random.normal())
+            for p, r, v in zip(asset_prices, sim_returns, sim_vols)
+        ])
+        sim_ttm = np.array([max(t - 1/252, 0.01) for t in times_to_maturity])
         sim_greeks = [
             black_scholes_greeks(
                 S=p, K=k, T=t, r=current_rate, sigma=iv, option_type=ot
-            ) if p is not None else {'Delta': 0, 'Gamma': 0, 'Theta': 0, 'Vega': 0, 'Rho': 0}
-            for p, k, t, iv, ot in zip(sim_prices, strike_prices or [100]*num_stocks, sim_ttm, implied_vols or [0.2]*num_stocks, option_types or ['call']*num_stocks)
+            )
+            for p, k, t, iv, ot in zip(sim_prices, strike_prices, sim_ttm, implied_vols, option_types)
         ]
-        sim_sent = np.array([compute_sentiment(g, current_rate, predicted_rate, inflation)[0] for g in sim_greeks]) + sim_sent_scores
+        sim_sent = np.array([
+            compute_sentiment(g, current_rate, predicted_rate, inflation)[0]
+            for g in sim_greeks
+        ]) + sim_sent_scores
 
+        # Calculate metrics
         metrics = calculate_metrics(
             weights=weights,
             expected_returns=sim_returns,
@@ -93,6 +109,7 @@ def simulate_scenarios(weights, expected_returns, return_stds, volatilities, vol
             var_values[i] = metrics['VaR 5%']
             sortino_ratios[i] = metrics['Sortino Ratio']
 
+    # Compile results
     results = {
         'Portfolio Return': {
             'mean': np.mean(portfolio_returns),
