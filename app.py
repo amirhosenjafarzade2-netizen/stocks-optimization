@@ -31,14 +31,14 @@ if 'stock_names' not in st.session_state:
 # Save/Load/CSV inputs
 col1, col2, col3 = st.columns(3)
 with col1:
-    serializable_state = {k: v for k, v in st.session_state.items() if k.startswith(('num_stocks', 'stock_names', 'ret_', 'vol_', 'tax_', 'corr_', 'price_', 'strike_', 'ttm_', 'ivol_', 'opt_type_', 'delta_', 'gamma_', 'theta_', 'vega_', 'rho_')) or k in ['current_rate', 'predicted_rate', 'inflation']}
+    serializable_state = {k: v for k, v in st.session_state.items() if k.startswith(('num_stocks', 'stock_names', 'ret_', 'vol_', 'tax_', 'corr_', 'price_', 'strike_', 'ttm_', 'ivol_', 'opt_type_', 'delta_', 'gamma_', 'theta_', 'vega_', 'rho_', 'use_ivol_')) or k in ['current_rate', 'predicted_rate', 'inflation']}
     st.download_button("Save Inputs", data=json.dumps(serializable_state), file_name="sentiment_inputs.json")
 with col2:
     uploaded_json = st.file_uploader("Load JSON Inputs", type="json")
     if uploaded_json:
         try:
             data = json.load(uploaded_json)
-            valid_keys = set(st.session_state.keys()) | set(['num_stocks', 'stock_names'] + [f'ret_{i}' for i in range(10)] + [f'vol_{i}' for i in range(10)] + [f'tax_{i}' for i in range(10)] + [f'corr_{i}_{j}' for i in range(10) for j in range(i+1, 10)] + [f'price_{i}' for i in range(10)] + [f'strike_{i}' for i in range(10)] + [f'ttm_{i}' for i in range(10)] + [f'ivol_{i}' for i in range(10)] + [f'opt_type_{i}' for i in range(10)] + [f'delta_{i}' for i in range(10)] + [f'gamma_{i}' for i in range(10)] + [f'theta_{i}' for i in range(10)] + [f'vega_{i}' for i in range(10)] + [f'rho_{i}' for i in range(10)] + ['current_rate', 'predicted_rate', 'inflation'])
+            valid_keys = set(st.session_state.keys()) | set(['num_stocks', 'stock_names'] + [f'ret_{i}' for i in range(10)] + [f'vol_{i}' for i in range(10)] + [f'tax_{i}' for i in range(10)] + [f'corr_{i}_{j}' for i in range(10) for j in range(i+1, 10)] + [f'price_{i}' for i in range(10)] + [f'strike_{i}' for i in range(10)] + [f'ttm_{i}' for i in range(10)] + [f'ivol_{i}' for i in range(10)] + [f'opt_type_{i}' for i in range(10)] + [f'delta_{i}' for i in range(10)] + [f'gamma_{i}' for i in range(10)] + [f'theta_{i}' for i in range(10)] + [f'vega_{i}' for i in range(10)] + [f'rho_{i}' for i in range(10)] + [f'use_ivol_{i}' for i in range(10)] + ['current_rate', 'predicted_rate', 'inflation'])
             for k, v in data.items():
                 if k in valid_keys:
                     st.session_state[k] = v
@@ -74,6 +74,7 @@ with col3:
                 st.session_state[f'ttm_{i}'] = row.get('Time to Maturity', 0.25)
                 st.session_state[f'ivol_{i}'] = row.get('Implied Volatility', 0.2)
                 st.session_state[f'opt_type_{i}'] = row.get('Option Type', 'call')
+                st.session_state[f'use_ivol_{i}'] = row.get('Use Implied Volatility', True)
             st.rerun()
         except Exception as e:
             st.error(f"Error loading CSV: {str(e)}")
