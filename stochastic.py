@@ -1,4 +1,3 @@
-```python
 import numpy as np
 from optimizer import calculate_metrics
 from sentiment import black_scholes_greeks, compute_sentiment
