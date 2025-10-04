@@ -3,6 +3,18 @@ from scipy.stats import norm
 from sklearn.cluster import KMeans
 
 def black_scholes_greeks(S, K, T, r, sigma, option_type='call'):
+    """
+    Calculate Black-Scholes Greeks for a stock's option.
+    Parameters:
+        S: Spot price
+        K: Strike price
+        T: Time to expiry (years)
+        r: Risk-free rate
+        sigma: Implied volatility
+        option_type: 'call' or 'put'
+    Returns:
+        Dictionary with Delta, Gamma, Theta, Vega, Rho
+    """
     if T <= 0 or sigma <= 0:
         return {'Delta': 0, 'Gamma': 0, 'Theta': 0, 'Vega': 0, 'Rho': 0}
     
@@ -29,8 +41,11 @@ def black_scholes_greeks(S, K, T, r, sigma, option_type='call'):
         'Rho': rho / 100       # Per 1%
     }
 
-def compute_sentiment(greeks, current_rate, predicted_rate, inflation, weights=[1.0, 0.5, -0.5, 0.3, 0.2]):
-    # weights: [Delta, Gamma, Theta, Vega, Rho]
+def compute_sentiment(greeks, current_rate, predicted_rate, inflation, weights=[1.0, 0.5, -1.0, 0.5, 0.3]):
+    """
+    Compute sentiment score and label.
+    weights: [Delta, Gamma, Theta, Vega, Rho]
+    """
     score = (weights[0] * greeks['Delta'] +
              weights[1] * greeks['Gamma'] +
              weights[2] * greeks['Theta'] +
@@ -46,6 +61,9 @@ def compute_sentiment(greeks, current_rate, predicted_rate, inflation, weights=[
     return adjusted_score, sentiment
 
 def cluster_stocks(features, num_clusters=3):
+    """
+    Cluster stocks based on Greeks features.
+    """
     kmeans = KMeans(n_clusters=num_clusters, random_state=42)
     labels = kmeans.fit_predict(features)
     return labels, kmeans.cluster_centers_
