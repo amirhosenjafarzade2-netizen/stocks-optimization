@@ -150,8 +150,10 @@ def scipy_optimize(returns, cov, num_stocks, rf_rate, min_weights, max_weights):
 def genetic_optimize_sentiment_weights(features, scores, generations=50):
     def fitness_func(ga_instance, solution, solution_idx):
         calc_scores = np.dot(features, solution)
-        bull_mean = np.mean(calc_scores[scores > 0])
-        bear_mean = np.mean(calc_scores[scores < 0])
+        bull = calc_scores[scores > 0]
+        bull_mean = np.mean(bull) if len(bull) > 0 else 0
+        bear = calc_scores[scores < 0]
+        bear_mean = np.mean(bear) if len(bear) > 0 else 0
         return abs(bull_mean - bear_mean)
     
     ga_instance = pygad.GA(num_generations=generations,
